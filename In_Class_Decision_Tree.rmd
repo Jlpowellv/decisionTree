@@ -41,6 +41,7 @@ of how the model will be used in practice.
 Libraries
 ```{r}
 library(rio)
+library(plyr)
 library(dplyr)
 library(tidyverse)
 library(rpart)
@@ -206,7 +207,7 @@ nT4 <- nrow(data2%>%filter(Tumor == "T4")) /nrow(data2)
 tumor_long = data2 %>% gather(Var, #<- list of predictor variables
                                 Value,#<- the values of those predictor variables
                                 -PR.Status) 
-tumor_long_form = ddply(data_long, 
+tumor_long_form = ddply(tumor_long, 
                             .(Var, Value),#<- group by Var and Value, "." 
                             #allows us to call the variables without quoting
                             summarize,  
@@ -214,6 +215,7 @@ tumor_long_form = ddply(data_long,
                             prob_T2 = nT4,
                             prob_T3 = nT3,
                             prob_T4 = nT4)
+tumor_long_form
 
 ```
 
