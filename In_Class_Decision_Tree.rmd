@@ -1,0 +1,190 @@
+---
+title: "In Class DT"
+author: "Brian Wright"
+date: "December 7, 2017"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Congrats! You just graduated from medical school and got a PhD in Data Science at the same time, wow impressive. Because of these incredible accomplishments the world now believes you will be able to cure cancer...no pressure. To start you figured you better create some way to detect cancer when present. Luckily because you are now a MD and DS PhD or MDSDPhD, you have access to data sets and know your way around a ML classifier. So, on the way to fulfilling your destiny to rig the world of cancer you start by building several classifiers that can be used to aid in determining if patients have cancer and the type of tumor. 
+
+The included dataset (clinical_data_breast_cancer_modified.csv) has information 
+on 105 patients across 17 variables, your goal is to build two classifiers one 
+for PR.Status (progesterone receptor), a biomarker that routinely leads to a 
+cancer diagnosis, indicating if there was a positive or negative outcome and 
+one for the Tumor a multi-class variable . You would like to be able to explain 
+the model to the mere mortals around you but need a fairly robust and flexible 
+approach so you've chosen to use decision trees to get started. In building both
+models us CART and C5.0 and compare the differences. 
+
+In doing so, similar to great data scientists of the past, you remembered 
+the excellent education provided to you at UVA in a 
+undergrad data science course and have outlined steps that will need to be 
+undertaken to complete this task (you can add more or combine if needed).  
+As always, you will need to make sure to #comment your work heavily and 
+render the results in a clear report (knitted) as the non MDSDPhDs of the 
+world will someday need to understand the wonder and spectacle that will 
+be your R code. Good luck and the world thanks you. 
+
+ Footnotes: 
+-	Some of the steps will not need to be repeated for the second model, use your judgment
+-	You can add or combine steps if needed
+-	Also, remember to try several methods during evaluation and always be mindful 
+of how the model will be used in practice.
+- Do not include ER.Status in your first tree it's basically the same as PR.Status
+
+Libraries
+```{r}
+library(rio)
+library(plyr)
+library(tidyverse)
+library(rpart)
+library(psych)
+library(pROC)
+#install.packages("rpart.plot")
+library(rpart.plot)
+#install.packages("rattle")
+library(rattle)
+setwd("/cloud/project/decision_trees")
+library(caret)
+#install.packages("C50")
+#install.packages("mlbench")
+#install.packages("e1071")
+library(e1071)
+library(C50)
+library(mlbench)
+```
+
+
+```{r}
+#1 Load the data and ensure the column names don't have spaces, hint check.names.  
+data <- tibble(import("clinical_breast_cleaned.csv", check.names= TRUE))
+```
+
+```{r}
+#2 Ensure all the variables are classified correctly and ensure the target variable for "PR.Status" is 0 for negative and 1 for positive
+
+data$PR.Status <- as.numeric(data$PR.Status)
+```
+
+```{r}
+#3 Don't check for correlated variables....because it doesn't matter with Decision Trees...that was easy
+```
+
+
+```{r}
+#4 Split your data into test and train using the caret
+x <- createDataPartition(data$PR.Status,times=1,p = 0.8,list=FALSE)
+training <- data[x,-3]
+test <- data[-x,-3]
+
+```
+
+```{r}
+
+#5 Guess what, you also don't need to standardize the data, because DTs don't 
+# give a ish, they make local decisions...keeps getting easier 
+
+```
+
+```{r}
+#6 Ok now determine the baserate for the classifier, what does this number mean.  
+#For the multi-class this will be the individual percentages for each class. 
+data_long = data %>% gather(Var, #<- list of predictor variables
+                                Value,#<- the values of those predictor variables
+                                -PR.Status) 
+data_long_form = ddply(data_long, 
+                            .(Var, Value),#<- group by Var and Value, "." 
+                            #allows us to call the variables without quoting
+                            summarize,  
+                            prob_PR.Status = mean(PR.Status), #<- probability of being Parent
+                            prob_not_PR.Status = 1 - mean(PR.Status)) #<- probability of not being Parent
+
+```
+
+```{r}
+#7 Build your model using the default settings
+set.seed(2702)
+data_gini = rpart(PR.Status~.,  #<- formula, response variable ~ predictors
+                           #   "." means "use all other variables in data"
+                            method = "class",#<- specify method, use "class" for tree
+                            parms = list(split = "gini"),#<- method for choosing tree split
+                            data = training,#<- data used
+                            control = rpart.control(cp=.01))
+
+
+```
+
+```{r}
+#8 View the results, what is the most important variable for the tree?
+#Look at the results
+data_gini
+```
+Based on the results, the most important value is the ER.Status being positive or negative. This is also later shown because it is the starting split of our tree when plotted.
+
+Second most important is the AJCC Stage, third is the age at initial pathologic diagnosis (above or below 53), and least important is the days to the date of last contact (above or below 820).
+
+To better visualize these four steps and what results they lead to, we will plot our decision tree.
+
+```{r}
+#9 Plot the tree using the rpart.plot package (CART only).
+
+rpart.plot(data_gini, type =4, extra = 101)
+```
+
+```{r}
+#10 plot the cp chart and note the optimal size of the tree (CART only).
+plotcp(data_gini)
+
+cptable_ex <- as_tibble(data_gini$cptable)
+cptable_ex
+```
+Next, we produce a "elbow chart" for various cp values and their associated relative errors. The dashed line represents the highest cross-validated error minus the minimum cross-validated error, plus the standard deviation of the error at that tree. A reasonable choice of cp for pruning is  the leftmost value because this is where the mean is less than the horizontal line. 
+
+DOUBLE CHECK THIS PLEASE: The optimal number of splits is 1 as shown in the cptable_ex because this has the lowest xerror and standard deviation.
+
+```{r}
+data_gini$variable.importance
+```
+We can also visualize the importance of including each variable as shown above. ER Status is shown to have significant importance in the decision making with an importance of 23 whereas the second most important variable, converted stage is approximately 1/8 of that level of importance.
+
+```{r}
+#11 Use the predict function and your models to predict the target variable using
+#test set. 
+tree_predict = predict(data_gini,test, type= "class")
+```
+
+```{r}
+#12 Generate, "by-hand", the hit rate and detection rate and compare the 
+#detection rate to your original baseline rate. How did your models work?
+confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+```
+
+```{r}
+#13 Use the the confusion matrix function in caret to 
+#check a variety of metrics and comment on the metric that might be best for 
+#each type of analysis.  
+par_conf_matrix<-confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+
+par_error_rate = (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]) / (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+
+paste0("Hit Rate/True Error Rate:", par_error_rate * 100, "%")
+
+#Detection Rate 
+
+
+
+par_conf_matrix$table[2,2]/(par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+```
+
+```{r}
+#14 Generate a ROC and AUC output, interpret the results
+par_roc <- roc(test$PR.Status, as.numeric(tree_predict), plot = TRUE)
+plot(par_roc)
+```
+
