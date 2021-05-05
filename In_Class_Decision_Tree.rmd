@@ -118,10 +118,14 @@ data_long_form = ddply(data_long,
                             summarize,  
                             prob_PR.Status = mean(PR.Status), #<- probability of being Parent
                             prob_not_PR.Status = 1 - mean(PR.Status)) #<- probability of not being Parent
+avg= mean(data[["PR.Status"]])
+1-avg
 ```
 The baserate is the base class of probabilities unconditioned on featural evidence, frequently also known as prior probabilities. Because this is a multiclass, we will be using the individual percentages for each class.
 
 We first gather/pair the data by the predictor variables (e.g. gender, tumor metastasis, etc.), then by the value of those predictor variables. We also add the probability that their PR Status is positive vs. negative.
+
+The overall baserate was found by taking the average of values in the PR.Status column. Thus, we found that 51.4% of the testing data had a positive PR Status and 48.6% had a negative PR Status.
 
 ## Building the Model
 
@@ -189,34 +193,42 @@ tree_predict = predict(data_gini,test, type= "class")
 
 tree_predict
 ```
-ADD WRITEUP HERE, DO NOT UNDERSTAND
+Our test set of size 21 resulted in the prediction of the target variable, the PR Status, as shown above.
 
-
-## Hit and Detection Rate
+## Confusion Matrix
+### Hit and Detection Rate
 ```{r}
 #12 Generate, "by-hand", the hit rate and detection rate and compare the 
 #detection rate to your original baseline rate. How did your models work?
 confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+
 ```
+The detection rate is found to be 33.33% with a prevalence of 66.7% Our model currently has an accuracy of 47.6%.
 
+The hit rate can be derived from the confusion matrix by taking the number of true positives (7) over total actual positive cases (7+ a missing 4 = 11) for a hit rate of 63.6%.
 
-
+### Best Metrics
 ```{r}
 #13 Use the the confusion matrix function in caret to 
 #check a variety of metrics and comment on the metric that might be best for 
 #each type of analysis.  
 par_conf_matrix<-confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+```
 
-par_error_rate = (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]) / (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+
+```{r}
+# Let's use these values in 1 calculation.
+par_error_rate = sum(par_conf_matrix[row(par_conf_matrix) != col(par_conf_matrix)]) / sum(par_conf_matrix)
 
 paste0("Hit Rate/True Error Rate:", par_error_rate * 100, "%")
+```
+The Hit Rate/ True Error Rate is 38.10%
 
-#Detection Rate 
-
-
-
+```{r}
 par_conf_matrix$table[2,2]/(par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
 ```
+
+
 
 ```{r}
 #14 Generate a ROC and AUC output, interpret the results
