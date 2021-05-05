@@ -61,12 +61,14 @@ library(C50)
 library(mlbench)
 ```
 
-
+## Reading in the Data
 ```{r}
 #1 Load the data and ensure the column names don't have spaces, hint check.names.  
 data <- tibble(import("clinical_breast_cleaned.csv", check.names= TRUE))
+#data<-subset(data, select = -c(ER.Status))
 ```
-
+ First, we load in the data and drop the ER.Status column as specified in the instructions. We also ensure all the variables are classified correctly and ensure that the target variable, PR.Status, is changed to a numeric 0 (negative) and 1 (positive) system. 
+ 
 ```{r}
 #2 Ensure all the variables are classified correctly and ensure the target variable for "PR.Status" is 0 for negative and 1 for positive
 
@@ -77,13 +79,23 @@ data$PR.Status <- as.numeric(data$PR.Status)
 #3 Don't check for correlated variables....because it doesn't matter with Decision Trees...that was easy
 ```
 
-
+## Splitting
+Next, we split the data into a training and a testing set
 ```{r}
 #4 Split your data into test and train using the caret
 x <- createDataPartition(data$PR.Status,times=1,p = 0.8,list=FALSE)
 training <- data[x,-3]
 test <- data[-x,-3]
+```
 
+Training Data
+```{r}
+head(training)
+```
+
+Testing Data
+```{r}
+head(test)
 ```
 
 ```{r}
@@ -93,6 +105,7 @@ test <- data[-x,-3]
 
 ```
 
+## Baserate
 ```{r}
 #6 Ok now determine the baserate for the classifier, what does this number mean.  
 #For the multi-class this will be the individual percentages for each class. 
@@ -105,8 +118,14 @@ data_long_form = ddply(data_long,
                             summarize,  
                             prob_PR.Status = mean(PR.Status), #<- probability of being Parent
                             prob_not_PR.Status = 1 - mean(PR.Status)) #<- probability of not being Parent
-
 ```
+The baserate is the base class of probabilities unconditioned on featural evidence, frequently also known as prior probabilities. Because this is a multiclass, we will be using the individual percentages for each class.
+
+We first gather/pair the data by the predictor variables (e.g. gender, tumor metastasis, etc.), then by the value of those predictor variables. We also add the probability that their PR Status is positive vs. negative.
+
+## Building the Model
+
+We build our model using the default setting and by using the rpart function. PR.Status is used as the "formula" aka our response variable. We utilize our previouslt split training dataset and set a cp of 0.01 as it is our default.
 
 ```{r}
 #7 Build your model using the default settings
@@ -118,7 +137,7 @@ data_gini = rpart(PR.Status~.,  #<- formula, response variable ~ predictors
                             data = training,#<- data used
                             control = rpart.control(cp=.01))
 
-
+data_gini
 ```
 
 ```{r}
@@ -126,17 +145,23 @@ data_gini = rpart(PR.Status~.,  #<- formula, response variable ~ predictors
 #Look at the results
 data_gini
 ```
-Based on the results, the most important value is the ER.Status being positive or negative. This is also later shown because it is the starting split of our tree when plotted.
 
-Second most important is the AJCC Stage, third is the age at initial pathologic diagnosis (above or below 53), and least important is the days to the date of last contact (above or below 820).
+Now we can see the probabilities of being positive or negative based on certain "decisions" or factors. 
 
-To better visualize these four steps and what results they lead to, we will plot our decision tree.
+The most important variable is shown to be the first split in our decision tree, the converted stage. In order of descending importance are the days to date of last contact, ACJCC Stage (only if they are stages IB, III, IIIC, or IV), age at initial pathologic diagnosis, and the rest of the AJCC Stages.
+
+This method of visualization isn't the most easy to use though so let's move on to making it a more visually pleasing tree!
+
+## Decision Tree
 
 ```{r}
 #9 Plot the tree using the rpart.plot package (CART only).
-
 rpart.plot(data_gini, type =4, extra = 101)
 ```
+
+Much better! Here we can see the split of importance of the variables and their end predictions. For example, if we knew the patient had a converted stage of Stage I breast cancer, we would follow the tree to the rightmost branch and immediately land at a terminal node.
+
+## CP Chart
 
 ```{r}
 #10 plot the cp chart and note the optimal size of the tree (CART only).
@@ -147,24 +172,34 @@ cptable_ex
 ```
 Next, we produce a "elbow chart" for various cp values and their associated relative errors. The dashed line represents the highest cross-validated error minus the minimum cross-validated error, plus the standard deviation of the error at that tree. A reasonable choice of cp for pruning is  the leftmost value because this is where the mean is less than the horizontal line. 
 
-DOUBLE CHECK THIS PLEASE: The optimal number of splits is 1 as shown in the cptable_ex because this has the lowest xerror and standard deviation.
+The optimal number of splits is 2 as shown in the cptable_ex because this is where the chart first dips below the mean line. Any more splitting increases the x-val relative error. Furthermore, we can also see in the cptable that this has a low relative error, okay xerror, and a decent xstd
+
+### Variable Importance
 
 ```{r}
 data_gini$variable.importance
 ```
-We can also visualize the importance of including each variable as shown above. ER Status is shown to have significant importance in the decision making with an importance of 23 whereas the second most important variable, converted stage is approximately 1/8 of that level of importance.
+We can also visualize the importance of including each variable as shown above. This reiterates what we have previously found, but displays the relative importance for all of the variables now. Most important is the AJCC Stage with a top score of 4.01 followed by converted stage with a score of 3.82. At the bottom and being the least important are gender with a score of 0.277 and HER2 Final Status with the lowest score of 0.139.
 
+Next, we use the predict function to predict the target variable.
 ```{r}
 #11 Use the predict function and your models to predict the target variable using
 #test set. 
 tree_predict = predict(data_gini,test, type= "class")
-```
 
+tree_predict
+```
+ADD WRITEUP HERE, DO NOT UNDERSTAND
+
+
+## Hit and Detection Rate
 ```{r}
 #12 Generate, "by-hand", the hit rate and detection rate and compare the 
 #detection rate to your original baseline rate. How did your models work?
 confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
 ```
+
+
 
 ```{r}
 #13 Use the the confusion matrix function in caret to 
