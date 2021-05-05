@@ -65,7 +65,6 @@ library(mlbench)
 ```{r}
 #1 Load the data and ensure the column names don't have spaces, hint check.names.  
 data <- tibble(import("clinical_breast_cleaned.csv", check.names= TRUE))
-#data<-subset(data, select = -c(ER.Status))
 ```
  First, we load in the data and drop the ER.Status column as specified in the instructions. We also ensure all the variables are classified correctly and ensure that the target variable, PR.Status, is changed to a numeric 0 (negative) and 1 (positive) system. 
  
@@ -73,6 +72,10 @@ data <- tibble(import("clinical_breast_cleaned.csv", check.names= TRUE))
 #2 Ensure all the variables are classified correctly and ensure the target variable for "PR.Status" is 0 for negative and 1 for positive
 
 data$PR.Status <- as.numeric(data$PR.Status)
+data$Age.at.Initial.Pathologic.Diagnosis <- as.numeric(data$Age.at.Initial.Pathologic.Diagnosis <- as.numeric)
+data$Days.to.Date.of.Last.Contact <- as.numeric(data$Days.to.Date.of.Last.Contact)
+data$Days.to.date.of.Death <- as.numeric(data$Days.to.date.of.Death)
+data$OS.Time <- as.numeric(data$OS.Time)
 ```
 
 ```{r}
@@ -140,8 +143,6 @@ data_gini = rpart(PR.Status~.,  #<- formula, response variable ~ predictors
                             parms = list(split = "gini"),#<- method for choosing tree split
                             data = training,#<- data used
                             control = rpart.control(cp=.01))
-
-data_gini
 ```
 
 ```{r}
@@ -152,7 +153,7 @@ data_gini
 
 Now we can see the probabilities of being positive or negative based on certain "decisions" or factors. 
 
-The most important variable is shown to be the first split in our decision tree, the converted stage. In order of descending importance are the days to date of last contact, ACJCC Stage (only if they are stages IB, III, IIIC, or IV), age at initial pathologic diagnosis, and the rest of the AJCC Stages.
+The most important variable is shown to be the first split in our decision tree the ACJCC Stage (only if they are stages IIA, III, IV). In descending order, the next three most important factors are athe Her2 Final Status, Converted Stage, and OS Time.
 
 This method of visualization isn't the most easy to use though so let's move on to making it a more visually pleasing tree!
 
@@ -172,6 +173,177 @@ Much better! Here we can see the split of importance of the variables and their 
 plotcp(data_gini)
 
 cptable_ex <- as_tibble(data_gini$cptable)
+cptable_ex
+```
+Next, we produce a "elbow chart" for various cp values and their associated relative errors. The dashed line represents the highest cross-validated error minus the minimum cross-validated error, plus the standard deviation of the error at that tree. A reasonable choice of cp for pruning is  the leftmost value because this is where the mean is less than the horizontal line. 
+
+The optimal number of splits is 3 as shown in the cptable_ex because this is where the chart first dips below the mean line. Any more splitting increases the x-val relative error. Furthermore, we can also see in the cptable that this has a low relative error, okay xerror, and a decent xstd
+
+### Variable Importance
+
+```{r}
+data_gini$variable.importance
+```
+We can also visualize the importance of including each variable as shown above. This reiterates similar points to what we have previously found, but displays the relative importance for all of the variables now. Most important is the Converted Stage with a top score of 3.24 followed by AJCC stage with a score of 3.21. At the bottom and being the least important are node coded with a score of 0.22 and metastasis than 0.185.
+
+Next, we use the predict function to predict the target variable.
+```{r}
+#11 Use the predict function and your models to predict the target variable using
+#test set. 
+tree_predict = predict(data_gini,test, type= "class")
+
+tree_predict
+```
+Our test set of size 21 resulted in the prediction of the target variable, the PR Status, as shown above.
+
+## Confusion Matrix
+### Hit and Detection Rate
+```{r}
+#12 Generate, "by-hand", the hit rate and detection rate and compare the 
+#detection rate to your original baseline rate. How did your models work?
+confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+
+```
+The detection rate is found to be 33.33% with a prevalence of 66.7% Our model currently has an accuracy of 47.6%.
+
+The hit rate can be derived from the confusion matrix by taking the number of true positives (7) over total actual positive cases (7+ a missing 4 = 11) for a hit rate of 63.6%.
+
+### Best Metrics
+```{r}
+#13 Use the the confusion matrix function in caret to 
+#check a variety of metrics and comment on the metric that might be best for 
+#each type of analysis.  
+par_conf_matrix<-confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+```
+
+```{r}
+par_error_rate = (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]) / (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+
+par_error_rate
+```
+The Hit Rate/ True Error Rate is 38.10%
+
+```{r}
+true_pos_rate = par_conf_matrix$table[2,2]/(par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+true_pos_rate 
+```
+The true positive rate, also shown as our detection rate is 33.33%
+
+The true positive rate could be improved upon as the ideal would create a confusion matrix with a value of 0 in the spot (1,2) also meaning a hit rate of 100%. We would want to focus on a higher hit rate in this specific case because it would be better for the patients to be more careful about their breast cancer diagnosis with a false positive rather than it being kept hidden with a false negative reading. If keeping false positives low was the ideal metric, then we would ideally be looking for a value of 0 in the confusion matrix at the spot (0,0) and also aiming for a high specificity or true negative rate.
+
+## AUC - ROC Curve
+```{r}
+#14 Generate a ROC and AUC output, interpret the results
+par_roc <- roc(test$PR.Status, as.numeric(tree_predict), plot = TRUE)
+par_roc
+plot(par_roc)
+```
+
+AUC - ROC curve is a performance measurement for the classification problems at various threshold settings. ROC is a probability curve and AUC represents the degree or measure of separability. It tells how much the model is capable of distinguishing between classes. Higher the AUC, the better the model is at predicting 0s as 0s and 1s as 1s.
+
+The area under the curve of this graph is 0.6227. As our specificity decreases from 1.0 to 0.5, our sensitivity increases at a high rate through a specificity of 0.5, then the incremental gain drop for a specificity of 0.5 to 0. 
+
+As shown in the graph, there is a slight inflection point caused by the two rates that causes a deviation from the baseline, but a larger deviation from the line is more desirable and indicates better predicting qualities by the model.
+
+## Multi Class Target: Tumors
+
+```{r}
+#15 Follow the same steps for the multi-class target, tumor, aside from step 1, 
+# 2 and 14. For step 13 compare to the four base rates and see how you did. 
+
+data2 <- read.csv("clinical_breast_cleaned.csv")
+data2$Tumor <- as.factor(data2$Tumor)
+data2$Age.at.Initial.Pathologic.Diagnosis <- as.numeric(data2$Age.at.Initial.Pathologic.Diagnosis <- as.numeric)
+data2$Days.to.Date.of.Last.Contact <- as.numeric(data2$Days.to.Date.of.Last.Contact)
+data2$Days.to.date.of.Death <- as.numeric(data2$Days.to.date.of.Death)
+data2$OS.Time <- as.numeric(data2$OS.Time)
+
+data2$Tumor1 <- as.numeric(ifelse(data2$Tumor == "T1", 1,0))
+data2$Tumor2 <- as.numeric(ifelse(data2$Tumor == "T2", 1,0))
+data2$Tumor3 <- as.numeric(ifelse(data2$Tumor == "T3", 1,0))
+data2$Tumor4 <- as.numeric(ifelse(data2$Tumor == "T4", 1,0))
+
+```
+
+### Splitting
+Next, we split the data into a training and a testing set
+```{r}
+#4 Split your data into test and train using the caret
+x2 <- createDataPartition(data2$Tumor,times=1,p = 0.8,list=FALSE)
+training2 <- data[x,-3]
+test2 <- data[-x,-3]
+```
+
+### Baserate
+
+```{r}
+#base rate
+
+tumor_long = data2 %>% gather(Var, #<- list of predictor variables
+                                Value,#<- the values of those predictor variables
+                                -Tumor) 
+tumor_long_form = ddply(tumor_long, 
+                            .(Var, Value),#<- group by Var and Value, "." 
+                            #allows us to call the variables without quoting
+                            summarize,  
+                            prob_T1 = mean(data2$Tumor1),
+                            prob_T2 = mean(data2$Tumor2),
+                            prob_T3 = mean(data2$Tumor3),
+                            prob_T4 = mean(data2$Tumor4))
+tumor_long_form
+
+tumor1_avg= mean(data2[["Tumor1"]])
+tumor2_avg= mean(data2[["Tumor2"]])
+tumor3_avg= mean(data2[["Tumor3"]])
+tumor4_avg= mean(data2[["Tumor4"]])
+```
+The overall baserates for each type of tumor was found by taking the average of values in the tumor# column. 
+
+Tumor 1 has a 14.3% positive rate, 2 has a 61.9% positive rate, 3 has a 18.1% positive rate, and 4 has a 5.7% positive rate.
+
+### Building the Model
+
+We build our model using the default setting and by using the rpart function. PR.Status is used as the "formula" aka our response variable. We utilize our previously split training dataset and set a cp of 0.01 as it is our default.
+
+```{r}
+#7 Build your model using the default settings
+set.seed(2702)
+data2_gini = rpart(Tumor~.,  #<- formula, response variable ~ predictors
+                           #   "." means "use all other variables in data"
+                            method = "class",#<- specify method, use "class" for tree
+                            parms = list(split = "gini"),#<- method for choosing tree split
+                            data = training,#<- data used
+                            control = rpart.control(cp=.01))
+
+```
+
+```{r}
+#8 View the results, what is the most important variable for the tree?
+#Look at the results
+data2_gini
+```
+Now we can see the probabilities of being positive or negative based on certain "decisions" or factors. 
+
+The most important variable is shown to be the first split in our decision tree, the AJCC Stage (specifically stages I, IA, and IIIB). In order of descending importance are the second group of AJCC Stages (IB, II, IIA, IIB, III), and the node coding positive or negative.
+
+This method of visualization isn't the most easy to use though so let's move on to making it a more visually pleasing tree!
+
+## Decision Tree
+
+```{r}
+#9 Plot the tree using the rpart.plot package (CART only).
+rpart.plot(data2_gini, type =4, extra = 101)
+```
+
+Much better! Here we can see the split of importance of the variables and their end predictions. For example, if we knew the patient were in AJCC Stage I, we would say they likely have a T1 tumor. Interestingly here, the T4 tumor is unused because it wasn't found in enough of the data (it does not have the predominant number in any grouping -- it challenges the reading of T1 in the rightmost node with 5, but T1 had slightly more with 7 readings).
+
+## CP Chart
+
+```{r}
+#10 plot the cp chart and note the optimal size of the tree (CART only).
+plotcp(data2_gini)
+
+cptable_ex <- as_tibble(data2_gini$cptable)
 cptable_ex
 ```
 Next, we produce a "elbow chart" for various cp values and their associated relative errors. The dashed line represents the highest cross-validated error minus the minimum cross-validated error, plus the standard deviation of the error at that tree. A reasonable choice of cp for pruning is  the leftmost value because this is where the mean is less than the horizontal line. 
@@ -215,56 +387,21 @@ The hit rate can be derived from the confusion matrix by taking the number of tr
 par_conf_matrix<-confusionMatrix(as.factor(tree_predict), as.factor(test$PR.Status), positive = "1", dnn=c("Prediction", "Actual"), mode = "sens_spec")
 ```
 
-
 ```{r}
-# Let's use these values in 1 calculation.
-par_error_rate = sum(par_conf_matrix[row(par_conf_matrix) != col(par_conf_matrix)]) / sum(par_conf_matrix)
+par_error_rate = (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]) / (par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
 
-paste0("Hit Rate/True Error Rate:", par_error_rate * 100, "%")
+par_error_rate
 ```
 The Hit Rate/ True Error Rate is 38.10%
 
 ```{r}
-par_conf_matrix$table[2,2]/(par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+true_pos_rate = par_conf_matrix$table[2,2]/(par_conf_matrix$table[1,2]+par_conf_matrix$table[2,1]+par_conf_matrix$table[1,1]+par_conf_matrix$table[2,2])
+true_pos_rate 
 ```
+The true positive rate, also shown as our detection rate is 33.33%
 
+The true positive rate could be improved upon as the ideal would create a confusion matrix with a value of 0 in the spot (1,2) also meaning a hit rate of 100%. We would want to focus on a higher hit rate in this specific case because it would be better for the patients to be more careful about their breast cancer diagnosis with a false positive rather than it being kept hidden with a false negative reading. If keeping false positives low was the ideal metric, then we would ideally be looking for a value of 0 in the confusion matrix at the spot (0,0) and also aiming for a high specificity or true negative rate.
 
-
-```{r}
-#14 Generate a ROC and AUC output, interpret the results
-par_roc <- roc(test$PR.Status, as.numeric(tree_predict), plot = TRUE)
-plot(par_roc)
-```
-
-```{r}
-#15 Follow the same steps for the multi-class target, tumor, aside from step 1, 
-# 2 and 14. For step 13 compare to the four base rates and see how you did. 
-
-#formatting
-data2 <- read.csv("clinical_breast_cleaned.csv")
-data2$Tumor <- as.factor(data2$Tumor)
-
-#base rate
-
-nT1 <- nrow(data2%>%filter(Tumor == "T1")) /nrow(data2)
-nT2 <- nrow(data2%>%filter(Tumor == "T2")) /nrow(data2)
-nT3 <- nrow(data2%>%filter(Tumor == "T3")) /nrow(data2)
-nT4 <- nrow(data2%>%filter(Tumor == "T4")) /nrow(data2)
-
-tumor_long = data2 %>% gather(Var, #<- list of predictor variables
-                                Value,#<- the values of those predictor variables
-                                -PR.Status) 
-tumor_long_form = ddply(tumor_long, 
-                            .(Var, Value),#<- group by Var and Value, "." 
-                            #allows us to call the variables without quoting
-                            summarize,  
-                            prob_T1 = nT1,
-                            prob_T2 = nT4,
-                            prob_T3 = nT3,
-                            prob_T4 = nT4)
-tumor_long_form
-
-```
 
 ```{r}
 # 16 Summarize what you learned for each model along the way and make 
